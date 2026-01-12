@@ -2,48 +2,25 @@
 import * as ImageManipulator from "expo-image-manipulator";
 
 /**
- * Fast center-crop to a target aspect and resize to model size.
- * Always outputs upright 256×256 JPEG.
+ * Fast resize to target width, preserving aspect ratio.
+ * Single-pass manipulation for optimal performance.
+ * 
+ * @param uri - Source image URI
+ * @param _targetAspect - Unused, kept for API compatibility
+ * @param targetSize - Target width in pixels (height auto-calculated to preserve aspect)
  */
 export async function normalizeAndCropToAspect(
   uri: string,
-  targetAspect: number = 1, // width/height, default square
+  _targetAspect: number = 4 / 3,
   targetSize: number = 256
 ): Promise<string> {
-  // single-pass manipulation: crop + resize + compress
-  const manipResult = await ImageManipulator.manipulateAsync(
-    uri,
-    [
-      { rotate: 0 }, // bake in EXIF rotation
-    ],
-    { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
-  );
-
-  // get actual size after rotation normalization
-  const W = manipResult.width!;
-  const H = manipResult.height!;
-  const current = W / H;
-
-  let cropW = W;
-  let cropH = H;
-
-  if (current > targetAspect) cropW = Math.round(H * targetAspect);
-  else if (current < targetAspect) cropH = Math.round(W / targetAspect);
-
-  const originX = Math.max(0, Math.round((W - cropW) / 2));
-  const originY = Math.max(0, Math.round((H - cropH) / 2));
-
-  // second (final) step: crop + resize together
+  // Single pass: resize by width only, height auto-scales to preserve aspect ratio
   const final = await ImageManipulator.manipulateAsync(
-    manipResult.uri,
-    [
-      {
-        crop: { originX, originY, width: cropW, height: cropH },
-      },
-      { resize: { width: targetSize, height: targetSize } },
-    ],
+    uri,
+    [{ resize: { width: targetSize } }],  // Only specify width → aspect preserved
     { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
   );
 
   return final.uri;
 }
+

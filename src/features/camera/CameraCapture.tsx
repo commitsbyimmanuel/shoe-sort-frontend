@@ -1,14 +1,14 @@
 // CameraCapture.tsx
-import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Image,
-  StyleSheet,
-  ActivityIndicator,
-} from "react-native";
 import { CameraView } from "expo-camera";
+import { useEffect, useRef, useState } from "react";
+import {
+    ActivityIndicator,
+    Image,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
 import { normalizeAndCropToAspect } from "../../lib/crop";
 
 type Stage = "CAPTURE_ONLY" | "CAPTURE_OR_DONE" | "WAITING" | "COMPUTE_READY";
@@ -16,12 +16,17 @@ type Stage = "CAPTURE_ONLY" | "CAPTURE_OR_DONE" | "WAITING" | "COMPUTE_READY";
 type CameraCaptureProps = {
   onCapture: (uri: string) => void | Promise<void>;
   isError?: boolean;
-  stage?: Stage; // NEW
-  onDone?: () => void | Promise<void>; // NEW
-  onCompute?: () => void | Promise<void>; // NEW
-  waitingText?: string; // NEW
+  stage?: Stage;
+  onDone?: () => void | Promise<void>;
+  onCompute?: () => void | Promise<void>;
+  waitingText?: string;
   defaultZoomFactor?: number;
+  // Queue status for display
+  queuePending?: number;
+  queueUploading?: number;
+  queueFailed?: number;
 };
+
 
 const PREVIEW_ASPECT = 4 / 3;
 
@@ -33,6 +38,9 @@ export default function CameraCapture({
   onCompute,
   waitingText = "Waiting for others to be done",
   defaultZoomFactor = 1.4,
+  queuePending = 0,
+  queueUploading = 0,
+  queueFailed = 0,
 }: CameraCaptureProps) {
   const cameraRef = useRef<CameraView | null>(null);
   const [ready, setReady] = useState(false);
@@ -76,10 +84,10 @@ export default function CameraCapture({
 
       setLastShotUri(croppedUri);
 
-      const t3 = Date.now();
-      await onCapture(croppedUri);
-      console.log("t_onCapture", Date.now() - t3);
-      console.log("t_total", Date.now() - t0);
+      // Fire-and-forget: enqueue for background upload, don't await
+      // This makes capture near-instant (~350ms instead of ~1550ms)
+      onCapture(croppedUri);
+      console.log("t_ready_for_next", Date.now() - t0);
     } catch (e: any) {
       setErr(e?.message || "Capture failed");
     } finally {
@@ -156,17 +164,24 @@ export default function CameraCapture({
     );
   };
 
+  // Build status text showing queue state
+  const getStatusText = () => {
+    if (!ready) return "Starting camera…";
+    const parts: string[] = [];
+    if (queueUploading > 0) parts.push(`${queueUploading} uploading`);
+    if (queuePending > 0) parts.push(`${queuePending} pending`);
+    if (queueFailed > 0) parts.push(`${queueFailed} failed`);
+    if (parts.length > 0) return parts.join(" • ");
+    return "Preview is active";
+  };
+
   return (
     <View style={styles.card}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Live Camera</Text>
-          <Text style={styles.label}>
-            {ready
-              ? sending
-                ? "Sending image…"
-                : "Preview is active"
-              : "Starting camera…"}
+          <Text style={[styles.label, queueFailed > 0 && styles.labelError]}>
+            {getStatusText()}
           </Text>
         </View>
         <View style={styles.envPill}>
@@ -221,6 +236,7 @@ const styles = StyleSheet.create({
   },
   title: { color: "#fafafa", fontWeight: "600", fontSize: 16 },
   label: { color: "#a3a3a3", fontSize: 12 },
+  labelError: { color: "#f87171" },
   envPill: {
     backgroundColor: "#171717",
     borderColor: "#404040",

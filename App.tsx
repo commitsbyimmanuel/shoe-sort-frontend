@@ -1,34 +1,31 @@
-import React, { useReducer, useState } from "react";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  StatusBar,
-  View,
-  Text,
-  TextInput,
-  useWindowDimensions,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { useReducer, useState } from "react";
+import {
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    useWindowDimensions,
+    View
+} from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
-import { queryClient } from "./src/queryClient";
 import { DEFAULT_CLIENT_ID } from "./src/config";
 import CameraCapture from "./src/features/camera/CameraCapture";
-import ResultsView from "./src/features/results/ResultsView";
-import { useMatchMutation } from "./src/hooks/useMatchMutation";
+import { useUploadQueue } from "./src/hooks/useUploadQueue";
+import { queryClient } from "./src/queryClient";
 import type { ApiResponse } from "./src/types";
 
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useEffect } from "react";
-import LocationView from "./src/features/location/LocationView";
 import LocationUpdater from "./src/features/location/LocationUpdater";
-import { useGridStatusQuery, useMarkDoneMutation } from "./src/hooks/useGrid";
-import { useComputeMutation } from "./src/hooks/useCompute";
+import LocationView from "./src/features/location/LocationView";
 import ComputeModal from "./src/features/results/ComputeModal";
 import SettingsModal from "./src/features/settings/SettingsModal";
+import { useComputeMutation } from "./src/hooks/useCompute";
+import { useGridStatusQuery, useMarkDoneMutation } from "./src/hooks/useGrid";
 import { ApiProvider, useApi } from "./src/providers/ApiProvider";
 
 //Shoe location logic
@@ -78,7 +75,8 @@ function AppInner() {
   const [showCompute, setShowCompute] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const matchMutation = useMatchMutation(clientId);
+  // Upload queue for async, order-preserving uploads
+  const uploadQueue = useUploadQueue();
   const markDone = useMarkDoneMutation();
   const statusQuery = useGridStatusQuery(clientId, stage === "WAITING");
   const computeMutation = useComputeMutation();
@@ -111,7 +109,7 @@ function AppInner() {
     return `${clientId}-${nextShoeLocationState.row}-${nextShoeLocationState.column}`;
   }
 
-  const onCapture = async (uri: string) => {
+  const onCapture = (uri: string) => {
     const locationInfo = getLocationInfo();
     if (goingRight) {
       updateNextShoeLocation("COLUMN_RIGHT");
@@ -119,24 +117,34 @@ function AppInner() {
       updateNextShoeLocation("COLUMN_LEFT");
     }
 
-    try {
-      const resp = await matchMutation.mutateAsync({ uri, locationInfo });
-      console.log("✅ api result", resp);
-      setLastResponse(resp);
+    // Enqueue for background upload - returns immediately
+    uploadQueue.enqueue(uri, locationInfo, clientId);
 
-      // After FIRST successful capture -> show Done + Capture
-      if (stage === "CAPTURE_ONLY") setStage("CAPTURE_OR_DONE");
-    } catch (err) {
-      console.log("❌ mutateAsync threw:", err);
-      setLastResponse({ status: "error", message: String(err) } as any);
-      // stays on same stage; CameraCapture shows "Retake & Send"
-    }
+    // After FIRST capture -> show Done + Capture
+    if (stage === "CAPTURE_ONLY") setStage("CAPTURE_OR_DONE");
   };
 
   const onDone = async () => {
+    // Wait for any pending uploads to complete before marking done
+    if (uploadQueue.inFlight > 0) {
+      console.log(`Waiting for ${uploadQueue.inFlight} uploads to complete...`);
+      // Poll until queue is empty
+      await new Promise<void>((resolve) => {
+        const checkQueue = () => {
+          if (uploadQueue.isAllDone()) {
+            resolve();
+          } else {
+            setTimeout(checkQueue, 200);
+          }
+        };
+        checkQueue();
+      });
+    }
+
     try {
       // Grid and Client are the SAME ID:
       await markDone.mutateAsync({ grid: clientId, client_id: clientId });
+      uploadQueue.clearCompleted(); // Free memory
       setStage("WAITING"); // begin polling
     } catch (e) {
       console.warn("mark_done failed:", e);
@@ -259,6 +267,9 @@ function AppInner() {
               onCompute={onCompute}
               waitingText={waitingText}
               defaultZoomFactor={zoomFactor}
+              queuePending={uploadQueue.pending}
+              queueUploading={uploadQueue.uploading}
+              queueFailed={uploadQueue.failed}
             />
 
             <ComputeModal
@@ -266,11 +277,17 @@ function AppInner() {
               onClose={() => setShowCompute(false)}
             />
 
-            {matchMutation.isError ? (
+            {uploadQueue.failed > 0 ? (
               <View style={cardStyle}>
                 <View style={{ padding: 12 }}>
                   <Text style={{ color: "#f87171", fontSize: 14 }}>
-                    {(matchMutation.error as any)?.message || "Request failed"}
+                    {uploadQueue.failed} upload(s) failed.{" "}
+                    <Text
+                      style={{ textDecorationLine: "underline" }}
+                      onPress={() => uploadQueue.retryFailed()}
+                    >
+                      Retry
+                    </Text>
                   </Text>
                 </View>
               </View>

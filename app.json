@@ -43,7 +43,7 @@
       ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }]
     ],
     "extra": {
-      "API_BASE": "http://192.168.7.141:8000",
+      "API_BASE": "http://192.168.7.140:8000",
       "eas": {
         "projectId": "2fc384b3-5eb2-4df6-b7da-b4994275f660"
       }
