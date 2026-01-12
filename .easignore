@@ -1,0 +1,19 @@
+# editor & OS
+
+.vscode
+.DS_Store
+Thumbs.db
+.git
+.gitignore
+
+# build outputs
+
+dist
+build
+node_modules/.cache
+.expo
+
+# native folders (only if you are NOT using prebuild/Custom dev client)
+
+android/
+ios/
