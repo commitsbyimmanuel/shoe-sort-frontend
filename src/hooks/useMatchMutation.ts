@@ -1,8 +1,8 @@
 // src/hooks/useMatchMutation.ts
 import { useMutation } from "@tanstack/react-query";
-import type { ApiResponse } from "../types";
-import { API_BASE, apiUrl, MATCH_PATH } from "../config";
+import { apiUrl, MATCH_PATH } from "../config";
 import { fetchWithTimeout } from "../lib/http";
+import type { ApiResponse } from "../types";
 
 // Pass location_info from the caller (parent) so it controls sequencing like "GridA-01-01"
 type MatchVars = { uri: string; locationInfo: string };
@@ -16,14 +16,14 @@ export function useMatchMutation(clientId: string) {
       // IMPORTANT: React Native expects `name`, not `filename`
       fd.append("file", {
         uri,
-        name: `capture-${clientId}-${Date.now()}.jpg`,
+        name: `${clientId}-${Date.now()}.jpg`,
         type: "image/jpeg",
       } as any);
 
-      // API contract (Grid == Client -> same value everywhere)
-      fd.append("location_info", locationInfo); // required
-      fd.append("grid", clientId); // optional, but we send it
-      fd.append("client_id", clientId); // optional, but we send it
+      // API contract: backend expects "name" as the filename to save
+      // Format: "GridA-01-01.jpg" - no timestamp so retakes overwrite
+      const filename = `${locationInfo}.jpg`;
+      fd.append("name", filename);
 
       const url = apiUrl(MATCH_PATH);
       const res = await fetchWithTimeout(url, {
@@ -34,10 +34,8 @@ export function useMatchMutation(clientId: string) {
       // Don’t JSON.stringify FormData; it won’t show contents.
       // If you want visibility, log the fields separately:
       console.log("POST /scan fields:", {
-        location_info: locationInfo,
-        grid: clientId,
-        client_id: clientId,
-        file: `capture-${clientId}.jpg`,
+        name: filename,
+        file: `${clientId}-${Date.now()}.jpg`,
       });
 
       if (!res.ok) {

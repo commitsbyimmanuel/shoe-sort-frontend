@@ -164,21 +164,21 @@ class UploadQueue {
   }
 
   private async uploadJob(job: QueueJob): Promise<void> {
+    // Build filename: "GridA-01-01.jpg" - backend extracts grid from prefix
+    // No timestamp = same position overwrites previous photo (allows retakes)
+    const filename = `${job.locationInfo}.jpg`;
+    
     const fd = new FormData();
     fd.append("file", {
       uri: job.uri,
       name: `capture-${job.clientId}-${Date.now()}.jpg`,
       type: "image/jpeg",
     } as any);
-    fd.append("location_info", job.locationInfo);
-    fd.append("grid", job.clientId);
-    fd.append("client_id", job.clientId);
+    fd.append("name", filename);
 
     const url = apiUrl(MATCH_PATH);
     console.log("POST /scan fields:", {
-      location_info: job.locationInfo,
-      grid: job.clientId,
-      client_id: job.clientId,
+      name: filename,
       file: `capture-${job.clientId}.jpg`,
     });
 

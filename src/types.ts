@@ -58,5 +58,5 @@ export type ComputeResponse = {
 export type FeedbackVars = {
   compute_id: string;
   pair_id: string;
-  correct: boolean;
+  correct: boolean | null;  // null = undo/clear feedback
 };
