@@ -1,5 +1,5 @@
 // src/hooks/useMatchMutation.ts
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiUrl, MATCH_PATH } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 import type { ApiResponse } from "../types";
@@ -8,6 +8,8 @@ import type { ApiResponse } from "../types";
 type MatchVars = { uri: string; locationInfo: string };
 
 export function useMatchMutation(clientId: string) {
+  const queryClient = useQueryClient();
+
   return useMutation<ApiResponse, Error, MatchVars>({
     mutationFn: async ({ uri, locationInfo }) => {
       if (!locationInfo) throw new Error("location_info is required");
@@ -31,7 +33,7 @@ export function useMatchMutation(clientId: string) {
         body: fd, // let RN set multipart boundary
       });
 
-      // Don’t JSON.stringify FormData; it won’t show contents.
+      // Don't JSON.stringify FormData; it won't show contents.
       // If you want visibility, log the fields separately:
       console.log("POST /scan fields:", {
         name: filename,
@@ -46,6 +48,11 @@ export function useMatchMutation(clientId: string) {
         } as any;
       }
       return (await res.json()) as ApiResponse;
+    },
+    onSuccess: () => {
+      // Invalidate compute-results so ComputeModal refetches with fresh images
+      // This handles the case where a photo is retaken after compute runs
+      queryClient.invalidateQueries({ queryKey: ["compute-results"] });
     },
     mutationKey: ["match", clientId],
   });

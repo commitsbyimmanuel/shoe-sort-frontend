@@ -56,13 +56,15 @@ export default function ComputeModal({
     // filename is like "GridA/GridA-1-1.jpg"
     // We need to construct: /images/GridA/GridA-1-1.jpg
     const parts = filename.split("/");
+    // Cache-bust using compute version to force refetch after retakes
+    const cacheBuster = results?.version || Date.now();
     if (parts.length >= 2) {
       const grid = parts[0];
       const file = parts[parts.length - 1];
-      return `${apiUrl(IMAGES_PATH)}/${grid}/${file}`;
+      return `${apiUrl(IMAGES_PATH)}/${grid}/${file}?v=${cacheBuster}`;
     }
     // Fallback: just use the filename as-is
-    return `${apiUrl(IMAGES_PATH)}/${filename}`;
+    return `${apiUrl(IMAGES_PATH)}/${filename}?v=${cacheBuster}`;
   };
 
   const handleFeedback = useCallback(
@@ -162,7 +164,7 @@ export default function ComputeModal({
                   <View style={styles.imagesRow}>
                     <View style={styles.imageContainer}>
                       <Image
-                        source={{ uri: getImageUrl(p.left.filename) }}
+                        source={{ uri: getImageUrl(p.left.filename), cache: 'reload' }}
                         style={styles.shoeImage}
                         resizeMode="cover"
                       />
@@ -174,7 +176,7 @@ export default function ComputeModal({
                     </View>
                     <View style={styles.imageContainer}>
                       <Image
-                        source={{ uri: getImageUrl(p.right.filename) }}
+                        source={{ uri: getImageUrl(p.right.filename), cache: 'reload' }}
                         style={styles.shoeImage}
                         resizeMode="cover"
                       />

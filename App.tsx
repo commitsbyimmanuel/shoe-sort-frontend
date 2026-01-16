@@ -196,19 +196,41 @@ function AppInner() {
               <Text style={{ color: "#fff", fontSize: 18, fontWeight: "700" }}>
                 ShoeSort
               </Text>
-              <TouchableOpacity
-                onPress={() => setSettingsOpen(true)}
-                style={{
-                  padding: 8,
-                  borderRadius: 999,
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel="Open settings"
-                accessibilityRole="button"
-              >
-                <Ionicons name="settings-outline" size={22} color="#fff" />
-              </TouchableOpacity>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setShowCompute(true)}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 8,
+                    backgroundColor: "rgba(96,165,250,0.15)",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel="Load last compute results"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="albums-outline" size={16} color="#60a5fa" />
+                  <Text style={{ color: "#60a5fa", fontSize: 12, fontWeight: "600" }}>
+                    Last Compute
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setSettingsOpen(true)}
+                  style={{
+                    padding: 8,
+                    borderRadius: 999,
+                    backgroundColor: "rgba(255,255,255,0.08)",
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel="Open settings"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="settings-outline" size={22} color="#fff" />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
