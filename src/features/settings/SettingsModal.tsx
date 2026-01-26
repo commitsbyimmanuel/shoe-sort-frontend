@@ -7,15 +7,21 @@ import { normalizeHost } from "../../lib/apiBase";
 import { HEALTHZ_PATH } from "../../config";
 import { fetchWithTimeout } from "../../lib/http";
 
-type Props = { visible: boolean; onClose: () => void };
+type Props = {
+  visible: boolean;
+  onClose: () => void;
+  clientId: string;
+  onClientIdChange: (id: string) => void;
+};
 
-export default function SettingsModal({ visible, onClose }: Props) {
+export default function SettingsModal({ visible, onClose, clientId, onClientIdChange }: Props) {
   const insets = useSafeAreaInsets();
   const { host, port, baseUrl, setConfig, zoomFactor } = useApi();
 
   const [hostInput, setHostInput] = useState(host);
   const [portInput, setPortInput] = useState(port);
   const [zoomInput, setZoomInput] = useState(String(zoomFactor)); // 👈 local state
+  const [gridNameInput, setGridNameInput] = useState(clientId);
   const [testMsg, setTestMsg] = useState<null | { ok: boolean; text: string }>(
     null
   );
@@ -27,9 +33,10 @@ export default function SettingsModal({ visible, onClose }: Props) {
       setHostInput(host);
       setZoomInput(String(zoomFactor));
       setPortInput(port);
+      setGridNameInput(clientId);
       setTestMsg(null);
     }
-  }, [visible, host, port, zoomFactor]);
+  }, [visible, host, port, zoomFactor, clientId]);
 
   const onSave = async () => {
     const cleanHost = normalizeHost(hostInput || "");
@@ -128,6 +135,34 @@ export default function SettingsModal({ visible, onClose }: Props) {
 
         {/* Content */}
         <View style={{ flex: 1, padding: 16, gap: 12 }}>
+          {/* Grid Name */}
+          <Text style={{ color: "#d1d5db", marginBottom: 6 }}>
+            Grid Name
+          </Text>
+          <TextInput
+            value={gridNameInput}
+            onChangeText={(text) => {
+              setGridNameInput(text);
+              onClientIdChange(text);
+            }}
+            placeholder="person1"
+            placeholderTextColor="rgba(255,255,255,0.4)"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{
+              color: "#fff",
+              backgroundColor: "rgba(255,255,255,0.06)",
+              borderColor: "rgba(255,255,255,0.12)",
+              borderWidth: 1,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+            }}
+          />
+          <Text style={{ color: "#737373", fontSize: 11, marginBottom: 12 }}>
+            This ID is sent with each capture so other clients can receive your match.
+          </Text>
+
           <Text style={{ color: "#9ca3af", marginBottom: 4 }}>
             Base URL used for all API calls
           </Text>

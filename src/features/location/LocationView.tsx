@@ -15,7 +15,7 @@ export default function LocationView({
       <View
         style={{
           paddingHorizontal: 12,
-          paddingVertical: 10,
+          paddingVertical: 1,
           flexDirection: "row",
           justifyContent: "space-between",
         }}
@@ -24,7 +24,7 @@ export default function LocationView({
       </View>
       <View style={{ borderTopColor: "#262626", borderTopWidth: 1 }}>
         <View style={styles.row}>
-          <View style={{ flex: 1, paddingRight: 12 }}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.itemTitle}>{nextShoeLocation}</Text>
             <Text style={styles.itemSub} onPress={flipDirection}>
               {goingRight ? (
@@ -55,7 +55,7 @@ const styles = {
     borderWidth: 1,
     borderRadius: 16,
     overflow: "hidden" as const,
-    flex: 1,
+    height: 130
   },
   body: { padding: 12 },
   title: {
@@ -68,7 +68,7 @@ const styles = {
   dim: { color: "#a3a3a3", fontSize: 14 },
   row: {
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 1,
     borderBottomColor: "#262626",
     borderBottomWidth: 1,
     flexDirection: "row" as const,
@@ -79,7 +79,7 @@ const styles = {
     color: "#f87171",
     fontWeight: "600" as const,
     textAlign: "center" as const,
-    fontSize: 58,
+    fontSize: 48,
   },
   itemSub: { color: "#a3a3a3", fontSize: 24, textAlign: "center" as const },
 };

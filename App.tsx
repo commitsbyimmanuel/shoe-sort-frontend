@@ -5,7 +5,6 @@ import {
     StatusBar,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     useWindowDimensions,
     View
@@ -177,6 +176,7 @@ function AppInner() {
             borderBottomColor: "#171717",
             borderBottomWidth: 1,
             backgroundColor: "rgba(10,10,10,0.8)",
+            height: 70
           }}
         >
           <View
@@ -239,46 +239,13 @@ function AppInner() {
         <SettingsModal
           visible={settingsOpen}
           onClose={() => setSettingsOpen(false)}
+          clientId={clientId}
+          onClientIdChange={setClientId}
         />
 
         {/* Body */}
         <View style={{ flex: 1, alignItems: "center" }}>
-          <View style={{ width: "100%", padding: 16, gap: 12 }}>
-            {/* Client ID Card */}
-            <View
-              style={{
-                backgroundColor: "rgba(23,23,23,0.7)",
-                borderColor: "#262626",
-                borderWidth: 1,
-                borderRadius: 16,
-                padding: 12,
-              }}
-            >
-              <Text style={{ color: "#a3a3a3", fontSize: 12, marginBottom: 6 }}>
-                Grid Name
-              </Text>
-              <TextInput
-                value={clientId}
-                onChangeText={setClientId}
-                placeholder="person1"
-                placeholderTextColor="#6b7280"
-                autoCapitalize="none"
-                style={{
-                  backgroundColor: "#171717",
-                  borderColor: "#262626",
-                  borderWidth: 1,
-                  borderRadius: 12,
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
-                  color: "#fff",
-                  fontSize: 14,
-                }}
-              />
-              <Text style={{ color: "#737373", fontSize: 11, marginTop: 8 }}>
-                This ID is sent with each capture so other clients can receive
-                your match.
-              </Text>
-            </View>
+          <View style={{ width: "100%", padding: 16, paddingTop: 8, gap: 12, flex: 1 }}>
 
             {/* Camera */}
             <CameraCapture
@@ -292,6 +259,23 @@ function AppInner() {
               queuePending={uploadQueue.pending}
               queueUploading={uploadQueue.uploading}
               queueFailed={uploadQueue.failed}
+              locationOverlay={
+                <>
+                  <View style={{ flex: 1 }}>
+                    <LocationView
+                      nextShoeLocation={nextShoeLocation}
+                      goingRight={goingRight}
+                      flipDirection={flipDirection}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <LocationUpdater
+                      updateLocation={updateNextShoeLocation}
+                      flipDirection={flipDirection}
+                    />
+                  </View>
+                </>
+              }
             />
 
             <ComputeModal
@@ -315,51 +299,6 @@ function AppInner() {
               </View>
             ) : null}
 
-            {/* Results */}
-            {/* <ResultsView data={lastResponse} /> */}
-            <View
-              style={{
-                flexDirection: "row",
-                gap: 10,
-                alignItems: "stretch",
-                height: 180,
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <LocationView
-                  nextShoeLocation={nextShoeLocation}
-                  goingRight={goingRight}
-                  flipDirection={flipDirection}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <LocationUpdater
-                  updateLocation={updateNextShoeLocation}
-                  flipDirection={flipDirection}
-                />
-              </View>
-            </View>
-
-            {/* Footer */}
-            <View style={{ alignItems: "center", marginTop: 8 }}>
-              <Text
-                style={{
-                  color: "#737373",
-                  fontSize: 11,
-                  textAlign: "center",
-                }}
-              >
-                Built for SOEX Processing • Immanuel Varghese •
-                immanuel@vargheselima.com
-              </Text>
-              <Text
-                style={{
-                  color: "#737373",
-                  fontSize: 11,
-                  textAlign: "center",
-                }}
-              ></Text>
-            </View>
           </View>
         </View>
       </SafeAreaView>

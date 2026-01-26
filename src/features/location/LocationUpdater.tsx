@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(23,23,23,0.7)",
     borderColor: "#262626",
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 12,
     overflow: "hidden",
     flex: 1,
   },
@@ -110,7 +110,6 @@ const ui = StyleSheet.create({
   container: {
     flexDirection: "row",
     width: "100%",
-
     alignItems: "center",
     justifyContent: "center",
   },

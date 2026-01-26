@@ -9,6 +9,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { GestureHandlerRootView, PinchGestureHandler, PinchGestureHandlerGestureEvent } from "react-native-gesture-handler";
 import { normalizeAndCropToAspect } from "../../lib/crop";
 
 type Stage = "CAPTURE_ONLY" | "CAPTURE_OR_DONE" | "WAITING" | "COMPUTE_READY";
@@ -25,10 +26,12 @@ type CameraCaptureProps = {
   queuePending?: number;
   queueUploading?: number;
   queueFailed?: number;
+  // Location overlay - rendered transparently on the camera
+  locationOverlay?: React.ReactNode;
 };
 
 
-const PREVIEW_ASPECT = 4 / 3;
+const PREVIEW_ASPECT = 9 / 16;
 
 export default function CameraCapture({
   onCapture,
@@ -41,6 +44,7 @@ export default function CameraCapture({
   queuePending = 0,
   queueUploading = 0,
   queueFailed = 0,
+  locationOverlay,
 }: CameraCaptureProps) {
   const cameraRef = useRef<CameraView | null>(null);
   const [ready, setReady] = useState(false);
@@ -56,9 +60,28 @@ export default function CameraCapture({
     return (clamped - 1) / 4;
   };
   const [zoom, setZoom] = useState<number>(toExpoZoom(defaultZoomFactor));
+  const baseZoomRef = useRef<number>(zoom);
+  
   useEffect(() => {
-    setZoom(toExpoZoom(defaultZoomFactor));
+    const newZoom = toExpoZoom(defaultZoomFactor);
+    setZoom(newZoom);
+    baseZoomRef.current = newZoom;
   }, [defaultZoomFactor]);
+
+  // Pinch-to-zoom handler
+  const onPinchGestureEvent = (event: PinchGestureHandlerGestureEvent) => {
+    const scale = event.nativeEvent.scale;
+    // Calculate new zoom based on base zoom and pinch scale
+    const newZoom = Math.max(0, Math.min(1, baseZoomRef.current * scale));
+    setZoom(newZoom);
+  };
+
+  const onPinchHandlerStateChange = (event: PinchGestureHandlerGestureEvent) => {
+    // When gesture ends, save the current zoom as the new base
+    if (event.nativeEvent.state === 5) { // State.END = 5
+      baseZoomRef.current = zoom;
+    }
+  };
 
   const handleCapture = async () => {
     if (!cameraRef.current || sending) return;
@@ -95,50 +118,29 @@ export default function CameraCapture({
     }
   };
 
-  const renderActions = () => {
+  // Render bottom action button based on stage
+  const renderBottomAction = () => {
     if (stage === "CAPTURE_ONLY") {
+      // Done disabled until first capture
       return (
         <TouchableOpacity
-          style={[
-            styles.button,
-            styles.buttonSingle,
-            (sending || !ready) && styles.buttonDisabled,
-          ]}
-          onPress={handleCapture}
-          disabled={sending || !ready}
+          style={[styles.button, styles.buttonSingle, styles.buttonDisabled]}
+          disabled
         >
-          <Text style={styles.buttonText}>
-            {sending ? "Please wait…" : isError ? "Retake & Send" : "Capture"}
-          </Text>
+          <Text style={styles.buttonText}>Done</Text>
         </TouchableOpacity>
       );
     }
 
     if (stage === "CAPTURE_OR_DONE") {
       return (
-        <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.buttonSecondary, styles.rowLeft, styles.grow]}
-            onPress={() => onDone?.()}
-            disabled={sending}
-          >
-            <Text style={styles.buttonText}>Done</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.button,
-              styles.grow,
-              (sending || !ready) && styles.buttonDisabled,
-            ]}
-            onPress={handleCapture}
-            disabled={sending || !ready}
-          >
-            <Text style={styles.buttonText}>
-              {sending ? "Please wait…" : isError ? "Retake & Send" : "Capture"}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[styles.button, styles.buttonSingle]}
+          onPress={() => onDone?.()}
+          disabled={sending}
+        >
+          <Text style={styles.buttonText}>Done</Text>
+        </TouchableOpacity>
       );
     }
 
@@ -177,43 +179,68 @@ export default function CameraCapture({
 
   return (
     <View style={styles.card}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Live Camera</Text>
-          <Text style={[styles.label, queueFailed > 0 && styles.labelError]}>
-            {getStatusText()}
-          </Text>
-        </View>
-        <View style={styles.envPill}>
-          <Text style={styles.envText}>ENV</Text>
-        </View>
-      </View>
+      <GestureHandlerRootView style={styles.previewBox}>
+        <PinchGestureHandler
+          onGestureEvent={onPinchGestureEvent}
+          onHandlerStateChange={onPinchHandlerStateChange}
+        >
+          <View style={{ flex: 1 }}>
+            <CameraView
+              ref={cameraRef}
+              style={styles.camera}
+              facing="back"
+              onCameraReady={() => setReady(true)}
+              animateShutter={false}
+              zoom={zoom}
+              ratio="16:9"
+            />
 
-      <View style={styles.previewBox}>
-        <CameraView
-          ref={cameraRef}
-          style={styles.camera}
-          facing="back"
-          onCameraReady={() => setReady(true)}
-          animateShutter={false}
-          zoom={zoom}
-        />
+            {lastShotUri ? (
+              <Image source={{ uri: lastShotUri }} style={styles.thumb} />
+            ) : null}
 
-        {lastShotUri ? (
-          <Image source={{ uri: lastShotUri }} style={styles.thumb} />
-        ) : null}
+            {sending && (
+              <View style={styles.spinnerOverlay}>
+                <ActivityIndicator size="large" />
+                <Text style={styles.spinnerText}>Sending image…</Text>
+              </View>
+            )}
 
-        {sending && (
-          <View style={styles.spinnerOverlay}>
-            <ActivityIndicator size="large" />
-            <Text style={styles.spinnerText}>Sending image…</Text>
+            {/* Header overlay - transparent at bottom above location */}
+            <View style={styles.headerOverlay}>
+              <Text style={styles.title}>Live Camera</Text>
+              <Text style={[styles.label, queueFailed > 0 && styles.labelError]}>
+                {getStatusText()}
+              </Text>
+            </View>
+
+            {/* Location overlay - below header */}
+            {locationOverlay && (
+              <View style={styles.locationOverlay}>
+                {locationOverlay}
+              </View>
+            )}
+
+            {/* Circular capture button overlay */}
+            <View style={styles.captureButtonContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.captureButton,
+                  (sending || !ready) && styles.buttonDisabled,
+                ]}
+                onPress={handleCapture}
+                disabled={sending || !ready}
+              >
+                <View style={styles.captureButtonInner} />
+              </TouchableOpacity>
+            </View>
           </View>
-        )}
-      </View>
+        </PinchGestureHandler>
+      </GestureHandlerRootView>
 
       <View style={styles.body}>
         {!!err && <Text style={styles.error}>{err}</Text>}
-        {renderActions()}
+        {renderBottomAction()}
       </View>
     </View>
   );
@@ -221,35 +248,33 @@ export default function CameraCapture({
 
 const styles = StyleSheet.create({
   card: {
+    flex: 1,
     backgroundColor: "rgba(23,23,23,0.7)",
     borderColor: "#262626",
     borderWidth: 1,
     borderRadius: 16,
     overflow: "hidden",
   },
-  header: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  headerOverlay: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    right: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    backgroundColor: "rgba(0,0,0,0.4)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
   },
-  title: { color: "#fafafa", fontWeight: "600", fontSize: 16 },
-  label: { color: "#a3a3a3", fontSize: 12 },
+  title: { color: "#fafafa", fontWeight: "600", fontSize: 14 },
+  label: { color: "#a3a3a3", fontSize: 11 },
   labelError: { color: "#f87171" },
-  envPill: {
-    backgroundColor: "#171717",
-    borderColor: "#404040",
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
   envText: { color: "#d4d4d4", fontSize: 10 },
 
   previewBox: {
-    width: "100%",
-    aspectRatio: PREVIEW_ASPECT,
+    flex: 1,
     backgroundColor: "#000",
     position: "relative",
   },
@@ -277,7 +302,43 @@ const styles = StyleSheet.create({
   },
   spinnerText: { color: "#e5e5e5", marginTop: 8, fontSize: 14 },
 
-  body: { padding: 12 },
+  locationOverlay: {
+    position: "absolute",
+    top: 45,
+    left: 10,
+    right: 10,
+    flexDirection: "row",
+    gap: 10,
+    opacity: 0.75,
+    height: 130
+  },
+
+  // Circular capture button overlay
+  captureButtonContainer: {
+    position: "absolute",
+    bottom: 20,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  captureButton: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "rgba(255,255,255,0.3)",
+    borderWidth: 4,
+    borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  captureButtonInner: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#fff",
+  },
+
+  body: { padding: 8 },
 
   // Buttons
   row: {
@@ -291,21 +352,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#262626",
     borderColor: "#404040",
     borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingVertical: 8,
     paddingHorizontal: 16,
     alignItems: "center",
-    minHeight: 48,
+    justifyContent: "center",
   },
   buttonSecondary: {
     flex: 1,
     backgroundColor: "#171717",
     borderColor: "#404040",
     borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingVertical: 8,
     alignItems: "center",
-    minHeight: 48,
+    justifyContent: "center",
   },
   buttonDisabled: {
     opacity: 0.7,
