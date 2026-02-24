@@ -91,7 +91,6 @@ export default function CameraCapture({
       const t0 = Date.now();
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.9,
-        skipProcessing: true,
       });
       console.log("t_capture", Date.now() - t0);
 
@@ -100,8 +99,6 @@ export default function CameraCapture({
       const t1 = Date.now();
       const croppedUri = await normalizeAndCropToAspect(
         photo.uri,
-        PREVIEW_ASPECT,
-        512
       );
       console.log("t_crop", Date.now() - t1);
 
@@ -193,6 +190,7 @@ export default function CameraCapture({
               animateShutter={false}
               zoom={zoom}
               ratio="16:9"
+              responsiveOrientationWhenOrientationLocked={false}
             />
 
             {lastShotUri ? (
