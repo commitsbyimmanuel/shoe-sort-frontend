@@ -91,6 +91,7 @@ export default function CameraCapture({
       const t0 = Date.now();
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.9,
+        skipProcessing: true,
       });
       console.log("t_capture", Date.now() - t0);
 
