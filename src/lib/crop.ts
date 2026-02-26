@@ -1,8 +1,8 @@
 // src/lib/crop.ts
 import * as ImageManipulator from "expo-image-manipulator";
 
-const TARGET_W = 512;
-const TARGET_H = 910;
+const TARGET_W = 768;
+const TARGET_H = 1365;
 
 /**
  * Normalizes an image to exactly TARGET_W × TARGET_H (512×910) portrait.
