@@ -92,14 +92,18 @@ export default function CameraCapture({
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.9,
         skipProcessing: true,
+        exif: true,
       });
       console.log("t_capture", Date.now() - t0);
 
       if (!photo?.uri) throw new Error("Camera not ready");
 
       const t1 = Date.now();
+      const exifOrientation = photo.exif?.Orientation ?? 1;
+      console.log(`[capture] EXIF orientation: ${exifOrientation}`);
       const croppedUri = await normalizeAndCropToAspect(
         photo.uri,
+        exifOrientation,
       );
       console.log("t_crop", Date.now() - t1);
 
