@@ -32,30 +32,40 @@ type Action =
   | { type: "ROW_DOWN" }
   | { type: "ROW_UP" }
   | { type: "COLUMN_RIGHT" }
-  | { type: "COLUMN_LEFT" };
+  | { type: "COLUMN_LEFT" }
+  | { type: "SET_JUST_CAPTURED" };
 
 type State = {
   row: number;
   column: number;
+  justCaptured: boolean;
 };
 
 type Stage = "CAPTURE_ONLY" | "CAPTURE_OR_DONE" | "WAITING" | "COMPUTE_READY";
 
-function reducer(state: State, action: Action): State {
+function rowUpdateReducer(state: State, action: Action): State {
   switch (action.type) {
     case "ROW_DOWN":
-      return { ...state, row: state.row + 1 };
+      return {
+        ...state,
+        row: state.row + 1,
+        // Only subtract 1 if the column was auto-incremented by a capture
+        column: state.justCaptured ? Math.max(1, state.column - 1) : state.column,
+        justCaptured: false,
+      };
     case "ROW_UP":
-      return { ...state, row: Math.max(1, state.row - 1) }; // prevent going below 1
+      return { ...state, row: Math.max(1, state.row - 1), justCaptured: false };
     case "COLUMN_RIGHT":
-      return { ...state, column: state.column + 1 };
+      return { ...state, column: state.column + 1, justCaptured: false };
     case "COLUMN_LEFT":
-      return { ...state, column: Math.max(1, state.column - 1) };
+      return { ...state, column: Math.max(1, state.column - 1), justCaptured: false };
+    case "SET_JUST_CAPTURED":
+      return { ...state, justCaptured: true };
     default:
       return state;
   }
 }
-const initialState: State = { row: 1, column: 1 };
+const initialState: State = { row: 1, column: 1, justCaptured: false };
 
 // ----- End of shoe location logic -----
 
@@ -67,7 +77,7 @@ function AppInner() {
   const [stage, setStage] = useState<Stage>("CAPTURE_ONLY");
   const [lastResponse, setLastResponse] = useState<ApiResponse | null>(null);
   const [nextShoeLocationState, nextShoeLocationDispatch] = useReducer(
-    reducer,
+    rowUpdateReducer,
     initialState
   );
   const [goingRight, setGoingRight] = useState(true);
@@ -115,6 +125,7 @@ function AppInner() {
     } else {
       updateNextShoeLocation("COLUMN_LEFT");
     }
+    nextShoeLocationDispatch({ type: "SET_JUST_CAPTURED" });
 
     // Enqueue for background upload - returns immediately
     uploadQueue.enqueue(uri, locationInfo, clientId);
