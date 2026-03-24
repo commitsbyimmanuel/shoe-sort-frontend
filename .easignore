@@ -1,14 +1,3 @@
-# sibling project directories (not needed for frontend build)
-backend/
-backend-deployment/
-backkend/
-GridF/
-certs/
-__pycache__/
-
-# repo-root files
-*.ipynb
-
 # editor & OS
 .vscode/
 .DS_Store
