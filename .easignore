@@ -1,19 +1,29 @@
-# editor & OS
+# sibling project directories (not needed for frontend build)
+backend/
+backend-deployment/
+backkend/
+GridF/
+certs/
+__pycache__/
 
-.vscode
+# repo-root files
+*.ipynb
+
+# editor & OS
+.vscode/
 .DS_Store
 Thumbs.db
-.git
+.git/
 .gitignore
 
-# build outputs
+# dependencies (EAS installs from package.json)
+node_modules/
 
-dist
-build
-node_modules/.cache
-.expo
+# build artifacts & caches
+.expo/
+dist/
+build/
 
-# native folders (only if you are NOT using prebuild/Custom dev client)
-
+# generated native folders (EAS runs prebuild)
 android/
 ios/
