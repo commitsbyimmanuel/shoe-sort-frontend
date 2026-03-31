@@ -1,131 +1,92 @@
 // src/features/results/ComputeModal.tsx
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   Modal,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { apiUrl, IMAGES_PATH } from "../../config";
+import { useComputeStatusQuery } from "../../hooks/useCompute";
 import {
-  useComputeResultsQuery,
-  useComputeStatusQuery,
-  useFeedbackMutation,
-} from "../../hooks/useCompute";
-import type { PairItem } from "../../types";
-
-type UndoItem = {
-  pair_id: string;
-  compute_id: string;
-  previous_feedback: string | null;
-};
+  useGetPairQuery,
+  useGradePairMutation,
+} from "../../hooks/usePairGrading";
+import type { GradeValue, GradingPair } from "../../types";
 
 export default function ComputeModal({
   visible,
   onClose,
+  clientId,
+  onStartNewJob,
 }: {
   visible: boolean;
   onClose: () => void;
+  clientId: string;
+  onStartNewJob?: () => void;
 }) {
-  // Undo stack (local to this client)
-  const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
-  const [submittingPairId, setSubmittingPairId] = useState<string | null>(null);
+  const [isGrading, setIsGrading] = useState(false);
 
-  // Poll status while modal is open and inference might be running
+  // Poll compute status while modal is open
   const statusQuery = useComputeStatusQuery(visible);
   const isComputing = statusQuery.data?.running ?? false;
   const computeId = statusQuery.data?.compute_id ?? null;
 
-  // Poll results for real-time sync (only when not computing)
-  const resultsQuery = useComputeResultsQuery(computeId, visible && !isComputing);
-  const results = resultsQuery.data;
-  // Sort by descending similarity
-  const pairs = useMemo(
-    () => [...(results?.pairs ?? [])].sort((a, b) => b.sim - a.sim),
-    [results?.pairs]
-  );
+  // Fetch the next pair (only when not computing and we have a compute_id)
+  const pairQuery = useGetPairQuery(computeId, clientId, visible && !isComputing);
+  const currentPair = pairQuery.data?.pair ?? null;
+  const progress = pairQuery.data?.progress ?? null;
 
-  const feedback = useFeedbackMutation();
+  const gradeMutation = useGradePairMutation();
 
   const getImageUrl = (filename: string) => {
-    // filename is like "GridA/GridA-1-1.jpg"
-    // We need to construct: /images/GridA/GridA-1-1.jpg
-    const parts = filename.split("/");
-    // Cache-bust using compute version to force refetch after retakes
-    const cacheBuster = results?.version || Date.now();
-    if (parts.length >= 2) {
-      const grid = parts[0];
-      const file = parts[parts.length - 1];
-      return `${apiUrl(IMAGES_PATH)}/${grid}/${file}?v=${cacheBuster}`;
-    }
-    // Fallback: just use the filename as-is
+    // filename is like "GridA/GridA-01-01_abc.jpg"
+    // Direct path: /images/GridA/GridA-01-01_abc.jpg
+    const cacheBuster = Date.now();
     return `${apiUrl(IMAGES_PATH)}/${filename}?v=${cacheBuster}`;
   };
 
-  const handleFeedback = useCallback(
-    async (pair: PairItem, correct: boolean) => {
-      if (!computeId) return;
+  const handleGrade = useCallback(
+    async (pair: GradingPair, grade: GradeValue) => {
+      if (!computeId || isGrading) return;
       try {
-        setSubmittingPairId(pair.pair_id);
-        const resp = await feedback.mutateAsync({
+        setIsGrading(true);
+        await gradeMutation.mutateAsync({
           compute_id: computeId,
           pair_id: pair.pair_id,
-          correct,
+          client_id: clientId,
+          grade,
         });
-        // Push to undo stack
-        setUndoStack((prev) => [
-          ...prev,
-          {
-            pair_id: pair.pair_id,
-            compute_id: computeId,
-            previous_feedback: resp.previous_feedback,
-          },
-        ]);
+      } catch (e) {
+        console.warn("Grade pair failed:", e);
       } finally {
-        setSubmittingPairId(null);
+        setIsGrading(false);
       }
     },
-    [computeId, feedback]
+    [computeId, clientId, isGrading, gradeMutation]
   );
 
-  const handleUndo = useCallback(async () => {
-    const last = undoStack[undoStack.length - 1];
-    if (!last) return;
-
-    try {
-      setSubmittingPairId(last.pair_id);
-      await feedback.mutateAsync({
-        compute_id: last.compute_id,
-        pair_id: last.pair_id,
-        correct: null, // null = clear feedback
-      });
-      setUndoStack((prev) => prev.slice(0, -1));
-    } finally {
-      setSubmittingPairId(null);
-    }
-  }, [undoStack, feedback]);
+  // Determine the state
+  const isLoading = pairQuery.isLoading || pairQuery.isFetching;
+  const allDone = !isComputing && !isLoading && currentPair === null && pairQuery.data != null;
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Compute Results</Text>
+          <Text style={styles.title}>Pair Grading</Text>
           <View style={styles.headerActions}>
-            {undoStack.length > 0 && (
-              <TouchableOpacity
-                onPress={handleUndo}
-                style={styles.undoBtn}
-                disabled={submittingPairId !== null}
-              >
-                <Ionicons name="arrow-undo" size={20} color="#60a5fa" />
-                <Text style={styles.undoText}>Undo</Text>
-              </TouchableOpacity>
+            {progress && (
+              <View style={styles.progressBadge}>
+                <Text style={styles.progressText}>
+                  {progress.graded} / {progress.total}
+                </Text>
+              </View>
             )}
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={22} color="#fff" />
@@ -135,93 +96,169 @@ export default function ComputeModal({
 
         {/* Computing spinner */}
         {isComputing ? (
-          <View style={styles.loadingContainer}>
+          <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color="#60a5fa" />
-            <Text style={styles.loadingText}>Computing Results...</Text>
-            <Text style={styles.loadingSubtext}>This may take a few minutes</Text>
+            <Text style={styles.centerTitle}>Computing Results...</Text>
+            <Text style={styles.centerSubtext}>This may take a few minutes</Text>
           </View>
-        ) : (
-          <>
-            {/* Meta */}
-            <View style={styles.meta}>
-              <Text style={styles.metaText}>
-                Pairs pending review:{" "}
-                <Text style={styles.metaMono}>{pairs.length}</Text>
-              </Text>
-              {results?.min_sim && (
-                <Text style={styles.metaText}>
-                  Min similarity:{" "}
-                  <Text style={styles.metaMono}>{results.min_sim.toFixed(3)}</Text>
+        ) : allDone ? (
+          /* All pairs done */
+          <View style={styles.centerContainer}>
+            <View style={styles.doneIconCircle}>
+              <Ionicons name="checkmark-done-circle" size={72} color="#34d399" />
+            </View>
+            <Text style={styles.centerTitle}>No More Pairs Remaining</Text>
+            <Text style={styles.centerSubtext}>
+              All {progress?.total ?? 0} pairs have been graded
+            </Text>
+            {onStartNewJob && (
+              <TouchableOpacity
+                style={{
+                  marginTop: 24,
+                  backgroundColor: "#262626",
+                  paddingVertical: 12,
+                  paddingHorizontal: 24,
+                  borderRadius: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  borderColor: "#404040",
+                  borderWidth: 1,
+                }}
+                onPress={onStartNewJob}
+              >
+                <Ionicons name="refresh-circle" size={24} color="#60a5fa" />
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 16 }}>Start New Job</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : isLoading && !currentPair ? (
+          /* Loading next pair */
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#60a5fa" />
+            <Text style={styles.centerSubtext}>Loading pair...</Text>
+          </View>
+        ) : currentPair ? (
+          /* Show the current pair for grading */
+          <View style={styles.pairContainer}>
+            {/* Progress bar */}
+            {progress && (
+              <View style={styles.progressBarContainer}>
+                <View style={styles.progressBarBg}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        width: `${progress.total > 0
+                          ? (progress.graded / progress.total) * 100
+                          : 0
+                        }%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.progressBarLabel}>
+                  {progress.graded} graded · {progress.pending} pending
                 </Text>
-              )}
+              </View>
+            )}
+
+            {/* Pair card */}
+            <View style={styles.pairCard}>
+              {/* Similarity score */}
+              <View style={styles.simBadgeRow}>
+                <View style={styles.simBadge}>
+                  <Text style={styles.simScore}>
+                    {(currentPair.sim * 100).toFixed(1)}%
+                  </Text>
+                  <Text style={styles.simLabel}>similarity</Text>
+                </View>
+              </View>
+
+              {/* Images row */}
+              <View style={styles.imagesRow}>
+                {/* Left shoe */}
+                <View style={styles.imageContainer}>
+                  <Image
+                    source={{ uri: getImageUrl(currentPair.left.filename), cache: "reload" }}
+                    style={styles.shoeImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.locationBadge}>
+                    <Ionicons name="location" size={14} color="#fbbf24" />
+                    <Text style={styles.locationText}>
+                      {currentPair.left.location.split('-').slice(1).join('-')}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Divider */}
+                <View style={styles.divider}>
+                  <Ionicons name="swap-horizontal" size={24} color="#525252" />
+                </View>
+
+                {/* Right shoe */}
+                <View style={styles.imageContainer}>
+                  <Image
+                    source={{ uri: getImageUrl(currentPair.right.filename), cache: "reload" }}
+                    style={styles.shoeImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.locationBadge}>
+                    <Ionicons name="location" size={14} color="#fbbf24" />
+                    <Text style={styles.locationText}>
+                      {currentPair.right.location.split('-').slice(1).join('-')}
+                    </Text>
+                  </View>
+                </View>
+              </View>
             </View>
 
-            {/* Pairs list */}
-            <ScrollView contentContainerStyle={styles.list}>
-              {pairs.map((p) => (
-                <View key={p.pair_id} style={styles.pairCard}>
-                  {/* Images row */}
-                  <View style={styles.imagesRow}>
-                    <View style={styles.imageContainer}>
-                      <Image
-                        source={{ uri: getImageUrl(p.left.filename), cache: 'reload' }}
-                        style={styles.shoeImage}
-                        resizeMode="cover"
-                      />
-                      <Text style={styles.locationLabel}>{p.left.location}</Text>
-                    </View>
-                    <View style={styles.simContainer}>
-                      <Text style={styles.simScore}>{(p.sim * 100).toFixed(1)}%</Text>
-                      <Text style={styles.simLabel}>similarity</Text>
-                    </View>
-                    <View style={styles.imageContainer}>
-                      <Image
-                        source={{ uri: getImageUrl(p.right.filename), cache: 'reload' }}
-                        style={styles.shoeImage}
-                        resizeMode="cover"
-                      />
-                      <Text style={styles.locationLabel}>{p.right.location}</Text>
-                    </View>
-                  </View>
+            {/* Grading buttons */}
+            <View style={styles.gradeButtonsRow}>
+              <TouchableOpacity
+                style={[styles.gradeBtn, styles.wrongBtn, isGrading && styles.btnDisabled]}
+                disabled={isGrading}
+                onPress={() => handleGrade(currentPair, "incorrect")}
+              >
+                <Ionicons name="close-circle" size={28} color="#fff" />
+                <Text style={styles.gradeBtnText}>Wrong</Text>
+              </TouchableOpacity>
 
-                  {/* Actions */}
-                  <View style={styles.actions}>
-                    <TouchableOpacity
-                      style={[
-                        styles.actionBtn,
-                        styles.falsePositiveBtn,
-                        submittingPairId === p.pair_id && styles.btnDisabled,
-                      ]}
-                      disabled={submittingPairId === p.pair_id}
-                      onPress={() => handleFeedback(p, false)}
-                    >
-                      <Ionicons name="close-circle" size={20} color="#f87171" />
-                      <Text style={styles.falsePositiveText}>False Positive</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.actionBtn,
-                        styles.correctBtn,
-                        submittingPairId === p.pair_id && styles.btnDisabled,
-                      ]}
-                      disabled={submittingPairId === p.pair_id}
-                      onPress={() => handleFeedback(p, true)}
-                    >
-                      <Ionicons name="checkmark-circle" size={20} color="#34d399" />
-                      <Text style={styles.correctText}>Correct</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
+              <TouchableOpacity
+                style={[styles.gradeBtn, styles.skipBtn, isGrading && styles.btnDisabled]}
+                disabled={isGrading}
+                onPress={() => handleGrade(currentPair, "skip")}
+              >
+                <Ionicons name="help-circle" size={28} color="#fff" />
+                <Text style={styles.gradeBtnText}>Skip</Text>
+              </TouchableOpacity>
 
-              {pairs.length === 0 && !resultsQuery.isLoading && (
-                <View style={styles.empty}>
-                  <Ionicons name="checkmark-done-circle" size={48} color="#34d399" />
-                  <Text style={styles.emptyText}>All pairs reviewed!</Text>
-                </View>
-              )}
-            </ScrollView>
-          </>
+              <TouchableOpacity
+                style={[styles.gradeBtn, styles.foundBtn, isGrading && styles.btnDisabled]}
+                disabled={isGrading}
+                onPress={() => handleGrade(currentPair, "correct")}
+              >
+                <Ionicons name="checkmark-circle" size={28} color="#fff" />
+                <Text style={styles.gradeBtnText}>Found</Text>
+              </TouchableOpacity>
+            </View>
+
+            {isGrading && (
+              <View style={styles.gradingOverlay}>
+                <ActivityIndicator size="small" color="#60a5fa" />
+              </View>
+            )}
+          </View>
+        ) : (
+          /* No compute data at all */
+          <View style={styles.centerContainer}>
+            <Ionicons name="analytics-outline" size={48} color="#525252" />
+            <Text style={styles.centerTitle}>No Compute Results</Text>
+            <Text style={styles.centerSubtext}>
+              Run compute first to generate pairs
+            </Text>
+          </View>
         )}
       </View>
     </Modal>
@@ -245,69 +282,93 @@ const styles = StyleSheet.create({
   },
   title: { color: "#fff", fontSize: 20, fontWeight: "700" },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 12 },
-  undoBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#1e3a5f",
+  progressBadge: {
+    backgroundColor: "rgba(96,165,250,0.15)",
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
-  undoText: { color: "#60a5fa", fontSize: 14, fontWeight: "600" },
+  progressText: {
+    color: "#60a5fa",
+    fontSize: 13,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
   closeBtn: {
     backgroundColor: "#1f2937",
     borderRadius: 10,
     padding: 8,
   },
 
-  loadingContainer: {
+  // Center states (computing, done, loading, no data)
+  centerContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     gap: 16,
+    paddingHorizontal: 32,
   },
-  loadingText: { color: "#fff", fontSize: 18, fontWeight: "600" },
-  loadingSubtext: { color: "#9ca3af", fontSize: 14 },
+  centerTitle: { color: "#fff", fontSize: 20, fontWeight: "700", textAlign: "center" },
+  centerSubtext: { color: "#9ca3af", fontSize: 14, textAlign: "center" },
+  doneIconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(52,211,153,0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
-  meta: { paddingHorizontal: 16, paddingVertical: 12, gap: 4 },
-  metaText: { color: "#9ca3af", fontSize: 13 },
-  metaMono: { color: "#e5e7eb", fontWeight: "600" },
+  // Pair grading view
+  pairContainer: {
+    flex: 1,
+    padding: 16,
+    justifyContent: "center",
+    gap: 16,
+  },
 
-  list: { padding: 12, gap: 16 },
+  // Progress bar
+  progressBarContainer: {
+    gap: 6,
+  },
+  progressBarBg: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#262626",
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    borderRadius: 3,
+    backgroundColor: "#34d399",
+  },
+  progressBarLabel: {
+    color: "#737373",
+    fontSize: 12,
+    textAlign: "center",
+  },
 
+  // Pair card
   pairCard: {
     backgroundColor: "#171717",
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: "#27272a",
     overflow: "hidden",
+    padding: 16,
+    gap: 12,
   },
-  imagesRow: {
+  simBadgeRow: {
+    alignItems: "center",
+  },
+  simBadge: {
+    backgroundColor: "rgba(251,191,36,0.1)",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    gap: 8,
-  },
-  imageContainer: {
-    flex: 1,
-    alignItems: "center",
-  },
-  shoeImage: {
-    width: "100%",
-    aspectRatio: 1,
-    borderRadius: 12,
-    backgroundColor: "#262626",
-  },
-  locationLabel: {
-    color: "#d4d4d4",
-    fontSize: 12,
-    marginTop: 6,
-    fontWeight: "500",
-  },
-  simContainer: {
-    alignItems: "center",
-    paddingHorizontal: 8,
+    gap: 6,
   },
   simScore: {
     color: "#fbbf24",
@@ -315,37 +376,77 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   simLabel: {
-    color: "#737373",
-    fontSize: 10,
+    color: "#a3894a",
+    fontSize: 12,
   },
 
-  actions: {
+  imagesRow: {
     flexDirection: "row",
-    borderTopWidth: 1,
-    borderTopColor: "#27272a",
+    alignItems: "center",
+    gap: 8,
   },
-  actionBtn: {
+  imageContainer: {
     flex: 1,
+    alignItems: "center",
+    gap: 8,
+  },
+  shoeImage: {
+    width: "100%",
+    aspectRatio: 0.85,
+    borderRadius: 14,
+    backgroundColor: "#262626",
+  },
+  locationBadge: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    gap: 6,
+    gap: 4,
+    backgroundColor: "rgba(251,191,36,0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
   },
-  falsePositiveBtn: {
-    borderRightWidth: 1,
-    borderRightColor: "#27272a",
+  locationText: {
+    color: "#fbbf24",
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: 2.5,
   },
-  correctBtn: {},
-  falsePositiveText: { color: "#f87171", fontSize: 14, fontWeight: "600" },
-  correctText: { color: "#34d399", fontSize: 14, fontWeight: "600" },
-  btnDisabled: { opacity: 0.5 },
+  divider: {
+    paddingHorizontal: 4,
+  },
 
-  empty: {
+  // Grade buttons
+  gradeButtonsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  gradeBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 60,
-    gap: 12,
+    gap: 4,
   },
-  emptyText: { color: "#9ca3af", fontSize: 16 },
+  wrongBtn: {
+    backgroundColor: "#991b1b",
+  },
+  skipBtn: {
+    backgroundColor: "#1e40af",
+  },
+  foundBtn: {
+    backgroundColor: "#166534",
+  },
+  gradeBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  btnDisabled: {
+    opacity: 0.5,
+  },
+  gradingOverlay: {
+    alignItems: "center",
+    paddingTop: 4,
+  },
 });

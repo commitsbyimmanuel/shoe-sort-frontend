@@ -6,6 +6,7 @@ import {
   COMPUTE_RESULTS_PATH,
   COMPUTE_STATUS_PATH,
   FEEDBACK_PATH,
+  ARCHIVE_JOB_PATH,
 } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 import type { FeedbackVars, PairItem } from "../types";
@@ -46,7 +47,7 @@ export function useComputeStatusQuery(enabled: boolean) {
   return useQuery<ComputeStatus, Error>({
     queryKey: ["compute-status"],
     enabled,
-    refetchInterval: enabled ? 2000 : false, // Poll every 2s
+    refetchInterval: enabled ? 5000 : false, // Poll every 5s
     queryFn: async () => {
       const res = await fetchWithTimeout(apiUrl(COMPUTE_STATUS_PATH));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -122,6 +123,23 @@ export function useFeedbackMutation() {
       qc.invalidateQueries({ queryKey: ["compute-results"] });
     },
     mutationKey: ["compute.feedback"],
+  });
+}
+
+/**
+ * Archive the current compute job's images.
+ */
+export function useArchiveJobMutation() {
+  return useMutation<{ ok: boolean }, Error, { compute_id: string; discard: boolean }>({
+    mutationFn: async (vars) => {
+      const res = await fetchWithTimeout(apiUrl(ARCHIVE_JOB_PATH), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vars),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      return await res.json();
+    },
   });
 }
 

@@ -4,7 +4,7 @@ import { API_BASE, MARK_DONE_PATH, GRID_STATUS_PATH, apiUrl } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 
 type MarkDoneVars = { grid: string; client_id: string };
-type MarkDoneResp = { ok: boolean; grid: string; done_clients: string[] };
+type MarkDoneResp = { ok: boolean; grid: string; done_clients: string[]; is_last_client: boolean };
 
 type GridStatus = {
   ok: boolean;
@@ -32,15 +32,15 @@ export function useMarkDoneMutation() {
   });
 }
 
-export function useGridStatusQuery(gridOrClientId: string, enabled: boolean) {
+export function useGridStatusQuery(grid: string, client_id: string, enabled: boolean) {
   return useQuery<GridStatus, Error>({
-    queryKey: ["grid-status", gridOrClientId],
+    queryKey: ["grid-status", grid, client_id],
     enabled,
     refetchInterval: enabled ? 2000 : false, // poll every 2s only while waiting
     queryFn: async () => {
       const url = `${apiUrl(GRID_STATUS_PATH)}?grid=${encodeURIComponent(
-        gridOrClientId
-      )}`;
+        grid
+      )}&client_id=${encodeURIComponent(client_id)}`;
       const res = await fetchWithTimeout(url);
       if (!res.ok) {
         const text = await res.text();

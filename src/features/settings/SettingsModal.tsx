@@ -10,18 +10,18 @@ import { fetchWithTimeout } from "../../lib/http";
 type Props = {
   visible: boolean;
   onClose: () => void;
-  clientId: string;
-  onClientIdChange: (id: string) => void;
+  gridId: string;
+  onGridIdChange: (id: string) => void;
 };
 
-export default function SettingsModal({ visible, onClose, clientId, onClientIdChange }: Props) {
+export default function SettingsModal({ visible, onClose, gridId, onGridIdChange }: Props) {
   const insets = useSafeAreaInsets();
   const { host, port, baseUrl, setConfig, zoomFactor } = useApi();
 
   const [hostInput, setHostInput] = useState(host);
   const [portInput, setPortInput] = useState(port);
   const [zoomInput, setZoomInput] = useState(String(zoomFactor)); // 👈 local state
-  const [gridNameInput, setGridNameInput] = useState(clientId);
+  const [gridNameInput, setGridNameInput] = useState(gridId);
   const [testMsg, setTestMsg] = useState<null | { ok: boolean; text: string }>(
     null
   );
@@ -33,10 +33,10 @@ export default function SettingsModal({ visible, onClose, clientId, onClientIdCh
       setHostInput(host);
       setZoomInput(String(zoomFactor));
       setPortInput(port);
-      setGridNameInput(clientId);
+      setGridNameInput(gridId);
       setTestMsg(null);
     }
-  }, [visible, host, port, zoomFactor, clientId]);
+  }, [visible, host, port, zoomFactor, gridId]);
 
   const onSave = async () => {
     const cleanHost = normalizeHost(hostInput || "");
@@ -143,7 +143,7 @@ export default function SettingsModal({ visible, onClose, clientId, onClientIdCh
             value={gridNameInput}
             onChangeText={(text) => {
               setGridNameInput(text);
-              onClientIdChange(text);
+              onGridIdChange(text);
             }}
             placeholder="person1"
             placeholderTextColor="rgba(255,255,255,0.4)"

@@ -28,6 +28,9 @@ type CameraCaptureProps = {
   queueFailed?: number;
   // Location overlay - rendered transparently on the camera
   locationOverlay?: React.ReactNode;
+  
+  totalConnected?: number;
+  isLastClient?: boolean;
 };
 
 
@@ -45,6 +48,8 @@ export default function CameraCapture({
   queueUploading = 0,
   queueFailed = 0,
   locationOverlay,
+  totalConnected = 1,
+  isLastClient = false,
 }: CameraCaptureProps) {
   const cameraRef = useRef<CameraView | null>(null);
   const [ready, setReady] = useState(false);
@@ -59,14 +64,21 @@ export default function CameraCapture({
     if (clamped >= 5) return 1;
     return (clamped - 1) / 4;
   };
-  const [zoom, setZoom] = useState<number>(toExpoZoom(defaultZoomFactor));
-  const baseZoomRef = useRef<number>(zoom);
+  const [zoom, setZoom] = useState<number>(0);
+  const baseZoomRef = useRef<number>(0);
   
   useEffect(() => {
-    const newZoom = toExpoZoom(defaultZoomFactor);
-    setZoom(newZoom);
-    baseZoomRef.current = newZoom;
-  }, [defaultZoomFactor]);
+    if (ready) {
+      // Delay slightly to ensure some Android devices (like Nothing phone)
+      // successfully process the initial zoom update after setting up the native camera.
+      const timer = setTimeout(() => {
+        const newZoom = toExpoZoom(defaultZoomFactor);
+        setZoom(newZoom);
+        baseZoomRef.current = newZoom;
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [defaultZoomFactor, ready]);
 
   // Pinch-to-zoom handler
   const onPinchGestureEvent = (event: PinchGestureHandlerGestureEvent) => {
@@ -158,9 +170,20 @@ export default function CameraCapture({
     }
 
     // COMPUTE_READY
+    if (!isLastClient) {
+      return (
+        <TouchableOpacity
+          style={[styles.button, styles.buttonSingle, styles.buttonDisabled]}
+          disabled
+        >
+          <Text style={styles.buttonText}>Waiting for other device to compute...</Text>
+        </TouchableOpacity>
+      );
+    }
+
     return (
       <TouchableOpacity
-        style={[styles.button, styles.buttonSingle]}
+        style={[styles.button, styles.buttonSingle, { backgroundColor: "#15803d" }]}
         onPress={() => onCompute?.()}
       >
         <Text style={styles.buttonText}>Compute</Text>
@@ -176,7 +199,7 @@ export default function CameraCapture({
     if (queuePending > 0) parts.push(`${queuePending} pending`);
     if (queueFailed > 0) parts.push(`${queueFailed} failed`);
     if (parts.length > 0) return parts.join(" • ");
-    return "Preview is active";
+    return `${totalConnected} device${totalConnected !== 1 ? "s" : ""} connected`;
   };
 
   return (

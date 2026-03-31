@@ -60,3 +60,42 @@ export type FeedbackVars = {
   pair_id: string;
   correct: boolean | null;  // null = undo/clear feedback
 };
+
+// ============== Pair Grading Types ==============
+
+export type GradeValue = "correct" | "incorrect" | "skip";
+
+export type GradingPairSide = {
+  location: string;
+  filename: string;
+};
+
+export type GradingPair = {
+  _id: string;
+  compute_id: string;
+  pair_id: string;
+  sim: number;
+  left: GradingPairSide;
+  right: GradingPairSide;
+  status: string;
+  locked_by: string;
+  locked_at: number;
+};
+
+export type GradingProgress = {
+  total: number;
+  graded: number;
+  locked: number;
+  pending: number;
+};
+
+export type GetPairResponse = {
+  ok: boolean;
+  pair: GradingPair | null;
+  progress: GradingProgress;
+};
+
+export type GradePairResponse = {
+  ok: boolean;
+  remaining: number;
+};

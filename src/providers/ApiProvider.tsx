@@ -10,6 +10,7 @@ import {
   getHost,
   getPort,
   getZoomFactor,
+  getDeviceId,
   loadApiBase,
   saveApiBase,
   saveZoomFactor,
@@ -21,6 +22,7 @@ type Ctx = {
   baseUrl: string;
   setConfig: (h: string, p: string, z?: number) => Promise<void>;
   zoomFactor: number;
+  deviceId: string;
   setZoom: (z: number) => Promise<void>;
   reload: () => Promise<void>;
 };
@@ -31,6 +33,7 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
   const [host, setHost] = useState(getHost());
   const [port, setPort] = useState(getPort());
   const [zoomFactor, setZoomFactorState] = useState(getZoomFactor());
+  const [deviceId, setDeviceId] = useState(getDeviceId());
 
   const baseUrl = useMemo(() => getBaseUrl(), [host, port]);
 
@@ -40,6 +43,7 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
       setHost(getHost());
       setPort(getPort());
       setZoomFactorState(getZoomFactor());
+      setDeviceId(getDeviceId());
     })();
   }, []);
 
@@ -68,6 +72,7 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
         port,
         baseUrl,
         zoomFactor,
+        deviceId,
         setConfig,
         setZoom: async (z: number) => {
           await saveZoomFactor(z);
