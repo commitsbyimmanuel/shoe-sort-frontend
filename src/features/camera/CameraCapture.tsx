@@ -9,6 +9,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { Accelerometer } from "expo-sensors";
 import { GestureHandlerRootView, PinchGestureHandler, PinchGestureHandlerGestureEvent } from "react-native-gesture-handler";
 import { normalizeAndCropToAspect } from "../../lib/crop";
 
@@ -66,7 +67,20 @@ export default function CameraCapture({
   };
   const [zoom, setZoom] = useState<number>(0);
   const baseZoomRef = useRef<number>(0);
+  const [deviceIsUpsideDown, setDeviceIsUpsideDown] = useState(false);
   
+  useEffect(() => {
+    // Watch raw accelerometer to bypass misleading EXIF orientation on some OEM devices (Nothing, Motorola, etc.)
+    Accelerometer.setUpdateInterval(200);
+    const sub = Accelerometer.addListener(({ y }) => {
+      // Android accelerometer Y axis: +9.8 when upright, -9.8 when upside down.
+      // If Y is negative, gravity is pulling towards the top of the handset.
+      setDeviceIsUpsideDown(y < -0.15);
+    });
+
+    return () => sub.remove();
+  }, []);
+
   useEffect(() => {
     if (ready) {
       // Delay slightly to ensure some Android devices (like Nothing phone)
@@ -112,10 +126,11 @@ export default function CameraCapture({
 
       const t1 = Date.now();
       const exifOrientation = photo.exif?.Orientation ?? 1;
-      console.log(`[capture] EXIF orientation: ${exifOrientation}`);
+      console.log(`[capture] EXIF orientation: ${exifOrientation}, Sensor UpsideDown: ${deviceIsUpsideDown}`);
       const croppedUri = await normalizeAndCropToAspect(
         photo.uri,
         exifOrientation,
+        deviceIsUpsideDown,
       );
       console.log("t_crop", Date.now() - t1);
 

@@ -25,22 +25,40 @@ const COUNTER_ROTATIONS: Record<number, number> = {
 export async function normalizeAndCropToAspect(
   uri: string,
   exifOrientation: number = 1,
+  deviceIsUpsideDown: boolean = false,
 ): Promise<string> {
-  const actions: ImageManipulator.Action[] = [];
-
   // Step 1: Counter-rotate to cancel manipulateAsync's auto-EXIF rotation
-  const counterRotation = COUNTER_ROTATIONS[exifOrientation];
+  let counterRotation = COUNTER_ROTATIONS[exifOrientation];
+  
+  if (deviceIsUpsideDown && exifOrientation === 0) {
+    // The device (e.g., Nothing Phone, Motorola) physically rotated the buffer 180°
+    // because it thought it was upside down, but left EXIF as 0.
+    // We undo this hidden HAL flip.
+    counterRotation = 180;
+  }
+
   if (counterRotation) {
-    actions.push({ rotate: counterRotation });
     console.log(`[crop] counter-rotating ${counterRotation}° for EXIF orientation ${exifOrientation}`);
   }
 
-  // Probe post-EXIF dimensions (no-op manipulate to read w/h after auto-rotation)
-  const probed = await ImageManipulator.manipulateAsync(uri, [], {});
+  // Probe dimensions AFTER applying counter-rotation so the landscape safety check sees the real post-fix orientation, not the raw sensor buffer.
+  const probeActions: ImageManipulator.Action[] = counterRotation
+    ? [{ rotate: counterRotation }]
+    : [];
+  const probed = await ImageManipulator.manipulateAsync(uri, probeActions, {});
+  console.log(`[crop] probed (after counter-rot): ${probed.width}×${probed.height}`);
+
+  // Build the final action list from scratch so each step is intentional
+  const actions: ImageManipulator.Action[] = [];
+
+  if (counterRotation) {
+    actions.push({ rotate: counterRotation });
+  }
 
   // Step 2: Safety — rotate landscape → portrait
   if (probed.width > probed.height) {
     actions.push({ rotate: 90 });
+    console.log(`[crop] rotating 90° to fix landscape`);
   }
 
   // Step 3: Resize to target width; height auto-scales
