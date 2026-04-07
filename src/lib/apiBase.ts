@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const DEFAULT_HOST = "192.168.7.140";
 export const DEFAULT_PORT = "8000";
-export const DEFAULT_ZOOM_FACTOR = 1.4;
+export const DEFAULT_ZOOM_FACTOR = 2.6;
 
 const KEY_HOST = "api.host";
 const KEY_PORT = "api.port";

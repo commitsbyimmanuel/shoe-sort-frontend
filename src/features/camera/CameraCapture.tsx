@@ -21,6 +21,8 @@ type CameraCaptureProps = {
   stage?: Stage;
   onDone?: () => void | Promise<void>;
   onCompute?: () => void | Promise<void>;
+  onShowLastCompute?: () => void;
+  hasComputed?: boolean;
   waitingText?: string;
   defaultZoomFactor?: number;
   // Queue status for display
@@ -43,6 +45,8 @@ export default function CameraCapture({
   stage = "CAPTURE_ONLY",
   onDone,
   onCompute,
+  onShowLastCompute,
+  hasComputed = false,
   waitingText = "Waiting for others to be done",
   defaultZoomFactor = 1.4,
   queuePending = 0,
@@ -68,14 +72,24 @@ export default function CameraCapture({
   const [zoom, setZoom] = useState<number>(0);
   const baseZoomRef = useRef<number>(0);
   const [deviceIsUpsideDown, setDeviceIsUpsideDown] = useState(false);
+  // Rolling window of recent Y-axis readings to catch brief upside-down flips
+  // that the camera HAL may detect even if our instantaneous sample misses them.
+  const accelHistoryRef = useRef<{ y: number; t: number }[]>([]);
   
   useEffect(() => {
-    // Watch raw accelerometer to bypass misleading EXIF orientation on some OEM devices (Nothing, Motorola, etc.)
-    Accelerometer.setUpdateInterval(200);
+    // Poll at 50ms (20Hz) for better synchronisation with the camera HAL
+    Accelerometer.setUpdateInterval(50);
     const sub = Accelerometer.addListener(({ y }) => {
-      // Android accelerometer Y axis: +9.8 when upright, -9.8 when upside down.
-      // If Y is negative, gravity is pulling towards the top of the handset.
-      setDeviceIsUpsideDown(y < -0.15);
+      const now = Date.now();
+      const history = accelHistoryRef.current;
+      // Keep last 500ms of samples
+      history.push({ y, t: now });
+      while (history.length > 0 && now - history[0]!.t > 500) {
+        history.shift();
+      }
+      // Device is considered "upside down" if ANY sample in the window was negative
+      const wasRecentlyUpsideDown = history.some((s) => s.y < -0.15);
+      setDeviceIsUpsideDown(wasRecentlyUpsideDown);
     });
 
     return () => sub.remove();
@@ -192,6 +206,17 @@ export default function CameraCapture({
           disabled
         >
           <Text style={styles.buttonText}>Waiting for other device to compute...</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    if (hasComputed) {
+      return (
+        <TouchableOpacity
+          style={[styles.button, styles.buttonSingle, { backgroundColor: "#1e40af" }]}
+          onPress={() => onShowLastCompute?.()}
+        >
+          <Text style={styles.buttonText}>Show Last Compute</Text>
         </TouchableOpacity>
       );
     }

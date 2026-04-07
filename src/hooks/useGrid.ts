@@ -12,6 +12,7 @@ type GridStatus = {
   done_clients: string[];
   total_clients: number;
   all_done: boolean;
+  session_active: boolean;
 };
 
 export function useMarkDoneMutation() {

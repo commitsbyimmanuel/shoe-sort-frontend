@@ -90,6 +90,7 @@ function AppInner() {
   const [showCompute, setShowCompute] = useState(false);
   const [showNewJobModal, setShowNewJobModal] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hasComputed, setHasComputed] = useState(false);
 
   const joinClient = useJoinClientMutation();
   const archiveJob = useArchiveJobMutation();
@@ -118,6 +119,20 @@ function AppInner() {
       setShowCompute(true);
     }
   }, [stage, isLastClient, computeStatusPoll.data?.running]);
+
+  // Detect when another device started a new job (session reset)
+  useEffect(() => {
+    if (stage !== "LANDING" && statusQuery.data && statusQuery.data.session_active === false) {
+      console.log("[session] Session was reset by another device — returning to landing");
+      nextShoeLocationDispatch({ type: "RESET" });
+      setGoingRight(true);
+      setIsLastClient(false);
+      setStage("LANDING");
+      setShowCompute(false);
+      setHasComputed(false);
+      setShowNewJobModal(false);
+    }
+  }, [stage, statusQuery.data?.session_active]);
 
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
@@ -189,9 +204,14 @@ function AppInner() {
     try {
       await computeMutation.mutateAsync();
       setShowCompute(true);
+      setHasComputed(true);
     } catch (e) {
       console.warn("compute failed:", e);
     }
+  };
+
+  const onShowLastCompute = () => {
+    setShowCompute(true);
   };
 
   const onConnect = async () => {
@@ -219,6 +239,7 @@ function AppInner() {
     setIsLastClient(false);
     setStage("LANDING");
     setShowCompute(false);
+    setHasComputed(false);
     setShowNewJobModal(false);
     // Note: Optionally we could clear the queue using uploadQueue.clearCompleted()
   };
@@ -334,6 +355,8 @@ function AppInner() {
               stage={stage}
               onDone={onDone}
               onCompute={onCompute}
+              onShowLastCompute={onShowLastCompute}
+              hasComputed={hasComputed}
               waitingText={waitingText}
               defaultZoomFactor={zoomFactor}
               queuePending={uploadQueue.pending}

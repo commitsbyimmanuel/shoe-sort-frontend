@@ -1,6 +1,6 @@
 // src/features/results/ComputeModal.tsx
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -72,7 +72,18 @@ export default function ComputeModal({
 
   // Determine the state
   const isLoading = pairQuery.isLoading || pairQuery.isFetching;
-  const allDone = !isComputing && !isLoading && currentPair === null && pairQuery.data != null;
+  const noPairForClient = !isComputing && !isLoading && currentPair === null && pairQuery.data != null;
+  const othersStillGrading = noPairForClient && progress != null && (progress.pending + progress.locked) > 0;
+  const allDone = noPairForClient && !othersStillGrading;
+
+  // Poll for progress updates when waiting for other devices to finish
+  useEffect(() => {
+    if (!othersStillGrading) return;
+    const interval = setInterval(() => {
+      pairQuery.refetch();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [othersStillGrading]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
@@ -101,13 +112,25 @@ export default function ComputeModal({
             <Text style={styles.centerTitle}>Computing Results...</Text>
             <Text style={styles.centerSubtext}>This may take a few minutes</Text>
           </View>
+        ) : othersStillGrading ? (
+          /* This client has no more pairs, but others are still working */
+          <View style={styles.centerContainer}>
+            <View style={styles.doneIconCircle}>
+              <Ionicons name="hourglass-outline" size={56} color="#60a5fa" />
+            </View>
+            <Text style={styles.centerTitle}>Your Pairs Are Done</Text>
+            <Text style={styles.centerSubtext}>
+              Waiting for other devices to finish grading ({progress!.graded} / {progress!.total} graded)
+            </Text>
+            <ActivityIndicator size="small" color="#525252" style={{ marginTop: 8 }} />
+          </View>
         ) : allDone ? (
           /* All pairs done */
           <View style={styles.centerContainer}>
             <View style={styles.doneIconCircle}>
               <Ionicons name="checkmark-done-circle" size={72} color="#34d399" />
             </View>
-            <Text style={styles.centerTitle}>No More Pairs Remaining</Text>
+            <Text style={styles.centerTitle}>All Pairs Graded</Text>
             <Text style={styles.centerSubtext}>
               All {progress?.total ?? 0} pairs have been graded
             </Text>
