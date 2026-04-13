@@ -6,9 +6,11 @@ import {
   COMPUTE_GRADE_PAIR_PATH,
 } from "../config";
 import { fetchWithTimeout } from "../lib/http";
+import { useWsEvent } from "../providers/WsProvider";
 import type {
   GetPairResponse,
   GradePairResponse,
+  GradingProgress,
   GradeValue,
 } from "../types";
 
@@ -67,4 +69,31 @@ export function useGradePairMutation() {
     },
     mutationKey: ["grade-pair"],
   });
+}
+
+/**
+ * Subscribe to real-time grading progress updates via WebSocket.
+ *
+ * Replaces the manual setInterval(() => pairQuery.refetch(), 3000) in
+ * ComputeModal.tsx. The server broadcasts grading_progress after every
+ * grade_pair call, so waiting clients update instantly rather than after
+ * up to 3 seconds.
+ *
+ * @param computeId  The active compute ID; events for other computes are ignored.
+ * @param onProgress Callback invoked when a grading_progress event arrives.
+ * @param enabled    Set false to pause the subscription.
+ */
+export function useWsGradingProgress(
+  computeId: string | null,
+  onProgress: (progress: GradingProgress) => void,
+  enabled: boolean = true
+): void {
+  useWsEvent(
+    "grading_progress",
+    (msg: any) => {
+      if (msg.compute_id !== computeId) return;
+      onProgress(msg.progress as GradingProgress);
+    },
+    enabled && !!computeId
+  );
 }

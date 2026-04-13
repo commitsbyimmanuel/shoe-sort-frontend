@@ -25,9 +25,10 @@ import ComputeModal from "./src/features/results/ComputeModal";
 import NewJobModal from "./src/features/results/NewJobModal";
 import SettingsModal from "./src/features/settings/SettingsModal";
 import { useJoinClientMutation } from "./src/hooks/useClient";
-import { useArchiveJobMutation, useComputeMutation, useComputeStatusQuery } from "./src/hooks/useCompute";
-import { useGridStatusQuery, useMarkDoneMutation } from "./src/hooks/useGrid";
+import { useArchiveJobMutation, useComputeMutation, useWsComputeStatus } from "./src/hooks/useCompute";
+import { useMarkDoneMutation, useWsGridStatus } from "./src/hooks/useGrid";
 import { ApiProvider, useApi } from "./src/providers/ApiProvider";
+import { WsProvider } from "./src/providers/WsProvider";
 
 //Shoe location logic
 type Action =
@@ -100,11 +101,11 @@ function AppInner() {
   const markDone = useMarkDoneMutation();
   const { zoomFactor, deviceId, baseUrl } = useApi();
   
-  // Poll whenever not in LANDING so we can display active device count
-  const statusQuery = useGridStatusQuery(gridId, deviceId, stage !== "LANDING");
+  // Subscribe to real-time grid status via WebSocket (replaces 2 s polling)
+  const statusQuery = useWsGridStatus(gridId, stage !== "LANDING");
   const computeMutation = useComputeMutation();
-  // Poll compute status if we are waiting for another device to compute
-  const computeStatusPoll = useComputeStatusQuery(stage === "COMPUTE_READY" && !isLastClient);
+  // Subscribe to real-time compute status via WebSocket (replaces 5 s polling)
+  const computeStatusPoll = useWsComputeStatus();
 
   useEffect(() => {
     if (stage === "WAITING" && statusQuery.data?.all_done) {
@@ -252,7 +253,8 @@ function AppInner() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={{ flex: 1, backgroundColor: "#0a0a0a" }}>
+      <WsProvider enabled={stage !== "LANDING"}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#0a0a0a" }}>
         <StatusBar barStyle="light-content" />
         {/* Header */}
         <View
@@ -416,6 +418,7 @@ function AppInner() {
           )}
         </View>
       </SafeAreaView>
+      </WsProvider>
     </SafeAreaProvider>
   );
 }

@@ -1,6 +1,6 @@
 // src/features/results/ComputeModal.tsx
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -11,10 +11,11 @@ import {
   View,
 } from "react-native";
 import { apiUrl, IMAGES_PATH } from "../../config";
-import { useComputeStatusQuery } from "../../hooks/useCompute";
+import { useWsComputeStatus } from "../../hooks/useCompute";
 import {
   useGetPairQuery,
   useGradePairMutation,
+  useWsGradingProgress,
 } from "../../hooks/usePairGrading";
 import type { GradeValue, GradingPair } from "../../types";
 
@@ -31,8 +32,8 @@ export default function ComputeModal({
 }) {
   const [isGrading, setIsGrading] = useState(false);
 
-  // Poll compute status while modal is open
-  const statusQuery = useComputeStatusQuery(visible);
+  // Subscribe to real-time compute status via WebSocket (replaces 5 s polling)
+  const statusQuery = useWsComputeStatus();
   const isComputing = statusQuery.data?.running ?? false;
   const computeId = statusQuery.data?.compute_id ?? null;
 
@@ -76,14 +77,17 @@ export default function ComputeModal({
   const othersStillGrading = noPairForClient && progress != null && (progress.pending + progress.locked) > 0;
   const allDone = noPairForClient && !othersStillGrading;
 
-  // Poll for progress updates when waiting for other devices to finish
-  useEffect(() => {
-    if (!othersStillGrading) return;
-    const interval = setInterval(() => {
-      pairQuery.refetch();
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [othersStillGrading]);
+  // When another device grades a pair the server pushes grading_progress;
+  // refetch our pair query so the progress counter updates instantly.
+  useWsGradingProgress(
+    computeId,
+    () => {
+      if (othersStillGrading) {
+        pairQuery.refetch();
+      }
+    },
+    visible && !isComputing
+  );
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>

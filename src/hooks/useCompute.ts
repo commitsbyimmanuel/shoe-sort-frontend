@@ -1,14 +1,15 @@
 // src/hooks/useCompute.ts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   apiUrl,
   COMPUTE_PATH,
   COMPUTE_RESULTS_PATH,
-  COMPUTE_STATUS_PATH,
   FEEDBACK_PATH,
   ARCHIVE_JOB_PATH,
 } from "../config";
 import { fetchWithTimeout } from "../lib/http";
+import { useWsEvent } from "../providers/WsProvider";
 import type { FeedbackVars, PairItem } from "../types";
 
 // ============== Types ==============
@@ -40,25 +41,56 @@ export type FeedbackResponse = {
 // ============== Hooks ==============
 
 /**
- * Poll compute status while inference is running.
- * Use enabled=true when modal opens, false after results are ready.
+ * Subscribe to real-time compute status via WebSocket.
+ *
+ * Replaces the previous polling-based `useComputeStatusQuery` (5 s interval).
+ * Returns `{ data: ComputeStatus }` — same shape as React Query so all
+ * existing consumers (App.tsx, ComputeModal.tsx) need no structural changes.
+ *
+ * Events handled:
+ *   snapshot          — initial state on WS connect / reconnect
+ *   inference_started — sets running=true
+ *   inference_done    — sets running=false, updates compute_id & version
  */
-export function useComputeStatusQuery(enabled: boolean) {
-  return useQuery<ComputeStatus, Error>({
-    queryKey: ["compute-status"],
-    enabled,
-    refetchInterval: enabled ? 5000 : false, // Poll every 5s
-    queryFn: async () => {
-      const res = await fetchWithTimeout(apiUrl(COMPUTE_STATUS_PATH));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return (await res.json()) as ComputeStatus;
-    },
+export function useWsComputeStatus(): { data: ComputeStatus } {
+  const [state, setState] = useState<ComputeStatus>({
+    running: false,
+    compute_id: null,
+    version: null,
   });
+
+  // Snapshot gives us the current state immediately on (re)connect
+  useWsEvent("snapshot", (msg: any) => {
+    setState((prev) => ({
+      running: msg.inference_running ?? prev.running,
+      compute_id: msg.compute_id ?? prev.compute_id,
+      version: msg.compute_version ?? prev.version,
+    }));
+  });
+
+  useWsEvent("inference_started", () => {
+    setState((prev) => ({ ...prev, running: true }));
+  });
+
+  useWsEvent("inference_done", (msg: any) => {
+    setState({
+      running: false,
+      compute_id: msg.compute_id ?? null,
+      version: msg.version ?? 1,
+    });
+  });
+
+  // Clear compute state when a new job starts (session reset)
+  useWsEvent("session_reset", () => {
+    setState({ running: false, compute_id: null, version: null });
+  });
+
+  return { data: state };
 }
 
 /**
- * Fetch and poll compute results for real-time sync across clients.
- * Polls every 3s while enabled.
+ * Fetch compute results on demand (not polling).
+ * Called when the modal opens or after a compute completes.
  */
 export function useComputeResultsQuery(
   computeId: string | null,
@@ -67,7 +99,7 @@ export function useComputeResultsQuery(
   return useQuery<ComputeResults, Error>({
     queryKey: ["compute-results", computeId],
     enabled: enabled && !!computeId,
-    refetchInterval: enabled ? 3000 : false, // Poll every 3s for sync
+    refetchInterval: false,
     queryFn: async () => {
       const url = computeId
         ? `${apiUrl(COMPUTE_RESULTS_PATH)}?compute_id=${computeId}`
@@ -95,7 +127,6 @@ export function useComputeMutation() {
       return await res.json();
     },
     onSuccess: () => {
-      // Invalidate status so it starts polling
       qc.invalidateQueries({ queryKey: ["compute-status"] });
     },
     mutationKey: ["compute.run"],
@@ -119,7 +150,6 @@ export function useFeedbackMutation() {
       return (await res.json()) as FeedbackResponse;
     },
     onSuccess: () => {
-      // Invalidate results to trigger refetch (sync with other clients)
       qc.invalidateQueries({ queryKey: ["compute-results"] });
     },
     mutationKey: ["compute.feedback"],
@@ -142,4 +172,3 @@ export function useArchiveJobMutation() {
     },
   });
 }
-
