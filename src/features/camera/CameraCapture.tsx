@@ -10,6 +10,7 @@ import {
     View,
 } from "react-native";
 import { Accelerometer } from "expo-sensors";
+
 import { GestureHandlerRootView, PinchGestureHandler, PinchGestureHandlerGestureEvent } from "react-native-gesture-handler";
 import { normalizeAndCropToAspect } from "../../lib/crop";
 
@@ -71,27 +72,16 @@ export default function CameraCapture({
   };
   const [zoom, setZoom] = useState<number>(0);
   const baseZoomRef = useRef<number>(0);
-  const [deviceIsUpsideDown, setDeviceIsUpsideDown] = useState(false);
-  // Rolling window of recent Y-axis readings to catch brief upside-down flips
-  // that the camera HAL may detect even if our instantaneous sample misses them.
-  const accelHistoryRef = useRef<{ y: number; t: number }[]>([]);
-  
-  useEffect(() => {
-    // Poll at 50ms (20Hz) for better synchronisation with the camera HAL
-    Accelerometer.setUpdateInterval(50);
-    const sub = Accelerometer.addListener(({ y }) => {
-      const now = Date.now();
-      const history = accelHistoryRef.current;
-      // Keep last 500ms of samples
-      history.push({ y, t: now });
-      while (history.length > 0 && now - history[0]!.t > 500) {
-        history.shift();
-      }
-      // Device is considered "upside down" if ANY sample in the window was negative
-      const wasRecentlyUpsideDown = history.some((s) => s.y < -0.15);
-      setDeviceIsUpsideDown(wasRecentlyUpsideDown);
-    });
 
+  const accelRef = useRef({ x: 0, y: 0, z: 0 });
+  const [accelDisplay, setAccelDisplay] = useState({ x: 0, y: 0, z: 0 });
+
+  useEffect(() => {
+    Accelerometer.setUpdateInterval(100);
+    const sub = Accelerometer.addListener((data) => {
+      accelRef.current = data;
+      setAccelDisplay(data);
+    });
     return () => sub.remove();
   }, []);
 
@@ -131,7 +121,6 @@ export default function CameraCapture({
       const t0 = Date.now();
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.9,
-        skipProcessing: true,
         exif: true,
       });
       console.log("t_capture", Date.now() - t0);
@@ -139,12 +128,15 @@ export default function CameraCapture({
       if (!photo?.uri) throw new Error("Camera not ready");
 
       const t1 = Date.now();
-      const exifOrientation = photo.exif?.Orientation ?? 1;
-      console.log(`[capture] EXIF orientation: ${exifOrientation}, Sensor UpsideDown: ${deviceIsUpsideDown}`);
+      const accel = { ...accelRef.current };
+      console.log(
+        `[capture] photo: ${photo.width}×${photo.height}` +
+        `, EXIF=${photo.exif?.Orientation ?? '?'}` +
+        `, accel=(${accel.x.toFixed(2)}, ${accel.y.toFixed(2)}, ${accel.z.toFixed(2)})`
+      );
       const croppedUri = await normalizeAndCropToAspect(
         photo.uri,
-        exifOrientation,
-        deviceIsUpsideDown,
+        accel,
       );
       console.log("t_crop", Date.now() - t1);
 
@@ -265,6 +257,13 @@ export default function CameraCapture({
               <Image source={{ uri: lastShotUri }} style={styles.thumb} />
             ) : null}
 
+            {/* Debug: live accelerometer overlay */}
+            <View style={styles.accelOverlay}>
+              <Text style={styles.accelText}>x: {accelDisplay.x.toFixed(3)}</Text>
+              <Text style={styles.accelText}>y: {accelDisplay.y.toFixed(3)}</Text>
+              <Text style={styles.accelText}>z: {accelDisplay.z.toFixed(3)}</Text>
+            </View>
+
             {sending && (
               <View style={styles.spinnerOverlay}>
                 <ActivityIndicator size="large" />
@@ -351,13 +350,27 @@ const styles = StyleSheet.create({
 
   thumb: {
     position: "absolute",
-    right: 10,
-    bottom: 10,
-    width: 64,
-    height: 48,
+    left: 10,
+    bottom: 12,
+    width: 96,
+    height: 160,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: "#404040",
+  },
+  accelOverlay: {
+    position: "absolute",
+    right: 8,
+    bottom: 12,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  accelText: {
+    color: "#0f0",
+    fontSize: 12,
+    fontFamily: "monospace",
   },
 
   spinnerOverlay: {

@@ -4,64 +4,47 @@ import * as ImageManipulator from "expo-image-manipulator";
 const TARGET_W = 768;
 const TARGET_H = 1365;
 
-// Counter-rotation to undo manipulateAsync's auto-EXIF rotation ONLY
-// for the 180° false positive. EXIF 6 (90° CW) and 8 (270° CW) are
-// normal sensor orientations that manipulateAsync correctly handles.
-// EXIF 3 (180°) and EXIF 8 are always wrong when the screen is portrait-locked —
-// it's caused by the ambiguous accelerometer when the phone is horizontal.
-const COUNTER_ROTATIONS: Record<number, number> = {
-  3: 180, // 180° false positive from horizontal phone
-  8: 180,
-};
+// ═══════════════════════════════════════════════════════════════════
+// TUNE THIS: Y-axis threshold for flipping inverted portrait images.
+// When the camera HAL outputs portrait with EXIF 0 AND the phone's
+// top edge is dipping (accel.y below this value), we assume the HAL
+// produced an inverted portrait and flip 180°.
+//
+// Set very negative (e.g. -999) to disable portrait flipping entirely.
+// Set to 0 to flip whenever the top edge dips at all.
+// ═══════════════════════════════════════════════════════════════════
+const PORTRAIT_FLIP_Y_THRESHOLD = -0.35;
 
 /**
  * Normalizes an image to exactly TARGET_W × TARGET_H portrait.
  *
- * 1. Counter-rotates to undo any incorrect auto-EXIF rotation.
- * 2. Safety-net: rotates 90° if the source is landscape (width > height).
- * 3. Resizes to width = TARGET_W (height auto-scales).
- * 4. Center-crops to TARGET_H if height overshoots.
+ * Rules:
+ *  1. Landscape (w > h): rotate 90° or 270° based on accel.x
+ *  2. Portrait  (h > w): flip 180° if accel.y < PORTRAIT_FLIP_Y_THRESHOLD
+ *  3. Resize to TARGET_W, center-crop to TARGET_H
  */
 export async function normalizeAndCropToAspect(
   uri: string,
-  exifOrientation: number = 1,
-  deviceIsUpsideDown: boolean = false,
+  accel: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 },
 ): Promise<string> {
-  // Step 1: Counter-rotate to cancel manipulateAsync's auto-EXIF rotation
-  let counterRotation = COUNTER_ROTATIONS[exifOrientation];
-  
-  if (deviceIsUpsideDown && exifOrientation === 0) {
-    // The device (e.g., Nothing Phone, Motorola) physically rotated the buffer 180°
-    // because it thought it was upside down, but left EXIF as 0.
-    // We undo this hidden HAL flip.
-    counterRotation = 180;
-  }
+  const probed = await ImageManipulator.manipulateAsync(uri, [], {});
+  console.log(`[crop] probed: ${probed.width}×${probed.height}`);
+  console.log(`accel.y value: ${accel.y}`);
 
-  if (counterRotation) {
-    console.log(`[crop] counter-rotating ${counterRotation}° for EXIF orientation ${exifOrientation}`);
-  }
-
-  // Probe dimensions AFTER applying counter-rotation so the landscape safety check sees the real post-fix orientation, not the raw sensor buffer.
-  const probeActions: ImageManipulator.Action[] = counterRotation
-    ? [{ rotate: counterRotation }]
-    : [];
-  const probed = await ImageManipulator.manipulateAsync(uri, probeActions, {});
-  console.log(`[crop] probed (after counter-rot): ${probed.width}×${probed.height}`);
-
-  // Build the final action list from scratch so each step is intentional
   const actions: ImageManipulator.Action[] = [];
 
-  if (counterRotation) {
-    actions.push({ rotate: counterRotation });
-  }
-
-  // Step 2: Safety — rotate landscape → portrait
   if (probed.width > probed.height) {
-    actions.push({ rotate: 90 });
-    console.log(`[crop] rotating 90° to fix landscape`);
+    // Landscape → rotate to portrait using accel.x
+    const rotation = accel.x < 0 ? 270 : 90;
+    actions.push({ rotate: rotation });
+    console.log(`[crop] rotating ${rotation}° to portrait (accel.x=${accel.x.toFixed(3)})`);
+  } else if (accel.y < PORTRAIT_FLIP_Y_THRESHOLD) {
+    // Portrait → possibly inverted, flip 180°
+    actions.push({ rotate: 180 });
+    console.log(`[crop] flipping 180° (accel.y=${accel.y.toFixed(3)} < threshold ${PORTRAIT_FLIP_Y_THRESHOLD})`);
   }
 
-  // Step 3: Resize to target width; height auto-scales
+  // Resize to target width; height auto-scales
   actions.push({ resize: { width: TARGET_W } });
 
   const resized = await ImageManipulator.manipulateAsync(uri, actions, {
@@ -71,7 +54,7 @@ export async function normalizeAndCropToAspect(
 
   console.log(`[crop] after resize: ${resized.width}×${resized.height}`);
 
-  // Step 4: Center-crop to exact target height if needed
+  // Center-crop to exact target height if needed
   if (resized.height > TARGET_H) {
     const yOff = Math.floor((resized.height - TARGET_H) / 2);
     const cropped = await ImageManipulator.manipulateAsync(
